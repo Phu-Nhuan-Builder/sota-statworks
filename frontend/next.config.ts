@@ -3,16 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   transpilePackages: ["plotly.js", "react-plotly.js"],
   webpack: (config, { isServer }) => {
-    // Web Worker support
-    config.module.rules.push({
-      test: /\.worker\.(ts|js)$/,
-      use: {
-        loader: "worker-loader",
-        options: {
-          filename: "static/[hash].worker.js",
-        },
-      },
-    });
+    // Web Workers: Next.js 14 handles *.worker.ts natively via
+    // `new Worker(new URL('./stats.worker.ts', import.meta.url))`
+    // — no worker-loader plugin needed.
 
     // Fallback for node modules not available in browser
     if (!isServer) {
