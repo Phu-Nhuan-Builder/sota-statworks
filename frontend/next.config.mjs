@@ -1,6 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   transpilePackages: ["plotly.js", "react-plotly.js"],
   webpack: (config, { isServer }) => {
     // Web Workers: Next.js 14 handles *.worker.ts natively via
