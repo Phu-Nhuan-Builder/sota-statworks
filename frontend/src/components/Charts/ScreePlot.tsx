@@ -25,10 +25,10 @@ export function ScreePlot({ eigenvalues }: { eigenvalues: number[] }) {
         },
       ]}
       layout={{
-        title: "Scree Plot",
+        title: { text: "Scree Plot" },
         height: 300,
-        xaxis: { title: "Factor Number" },
-        yaxis: { title: "Eigenvalue" },
+        xaxis: { title: { text: "Factor Number" } },
+        yaxis: { title: { text: "Eigenvalue" } },
         margin: { t: 30, r: 20, b: 50, l: 50 },
         font: { family: "Arial", size: 9 },
       }}

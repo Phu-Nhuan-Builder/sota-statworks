@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useDatasetStore } from "@/stores/datasetStore";
-import { formatNumber, formatPValue, significanceStars } from "@/lib/utils";
+import { formatNumber, significanceStars } from "@/lib/utils";
 import type { OutputBlock as OutputBlockType } from "@/types/dataset";
 import { X, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -44,7 +44,7 @@ function GenericTable({ data }: { data: Record<string, unknown>[] }) {
   );
 }
 
-function renderContent(block: OutputBlockType) {
+function renderContent(block: OutputBlockType): ReactNode {
   const content = block.content as Record<string, unknown>;
   if (!content) return <p className="text-xs text-gray-400">No content</p>;
 

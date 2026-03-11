@@ -37,10 +37,10 @@ export function QQPlot({
         },
       ]}
       layout={{
-        title: "Normal Q-Q Plot",
+        title: { text: "Normal Q-Q Plot" },
         height: 300,
-        xaxis: { title: "Theoretical Quantiles" },
-        yaxis: { title: "Observed Values" },
+        xaxis: { title: { text: "Theoretical Quantiles" } },
+        yaxis: { title: { text: "Observed Values" } },
         margin: { t: 30, r: 20, b: 50, l: 50 },
         font: { family: "Arial", size: 9 },
       }}

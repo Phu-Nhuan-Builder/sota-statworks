@@ -19,8 +19,8 @@ export function ScatterPlot({
       data={[{ type: "scatter", mode: "markers", x, y }]}
       layout={{
         height: 300,
-        xaxis: { title: xLabel },
-        yaxis: { title: yLabel },
+        xaxis: { title: xLabel ? { text: xLabel } : undefined },
+        yaxis: { title: yLabel ? { text: yLabel } : undefined },
         margin: { t: 20, r: 20, b: 50, l: 50 },
         font: { family: "Arial", size: 9 },
       }}
