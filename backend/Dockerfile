@@ -1,4 +1,6 @@
-FROM python:3.11-slim AS builder
+# Pin to Debian 12 Bookworm — stable WeasyPrint deps (libgdk-pixbuf2.0-0
+# was renamed in Debian 13 Trixie, which python:3.11-slim now tracks)
+FROM python:3.11-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -13,18 +15,20 @@ RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ---- Runtime stage ----
-FROM python:3.11-slim AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 
 WORKDIR /app
 
 # WeasyPrint system dependencies (pango, cairo, gdk-pixbuf)
+# All package names are stable on Debian 12 Bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
     libcairo2 \
     libgdk-pixbuf2.0-0 \
-    libffi-dev \
+    libffi8 \
     shared-mime-info \
+    fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
