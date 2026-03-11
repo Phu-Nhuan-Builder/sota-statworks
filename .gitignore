@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.env
+!.env.example
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+frontend/.env.local
+!frontend/.env.local.example
+frontend/.env
+frontend/dist/
+*.tsbuildinfo
+.npm/
+
+# Docker
+*.override.yml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Uploads / temp
+/tmp/uploads/
+*.sav.tmp
+*.bak
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Logs
+*.log
+logs/
