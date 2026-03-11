@@ -2,6 +2,10 @@
   "name": "bernie-spss-frontend",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -26,7 +30,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.4.0",
-    "lucide-react": "^0.400.0",
+    "lucide-react": "^0.469.0",
     "@radix-ui/react-dialog": "^1.1.1",
     "@radix-ui/react-checkbox": "^1.1.1",
     "@radix-ui/react-select": "^2.1.1",
