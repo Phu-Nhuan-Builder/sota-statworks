@@ -35,7 +35,8 @@ function PivotTable({
   rows: unknown[][];
   firstColLeft?: boolean;
 }) {
-  if (!headers?.length || !rows?.length) return <p className="text-xs text-gray-400">No data</p>;
+  if (!Array.isArray(headers) || !Array.isArray(rows) || !headers.length || !rows.length)
+    return <p className="text-xs text-gray-400">No data</p>;
   return (
     <table className="spss-table">
       <thead>
@@ -46,7 +47,7 @@ function PivotTable({
       <tbody>
         {rows.map((row, i) => (
           <tr key={i}>
-            {(row as unknown[]).map((cell, j) => (
+            {(Array.isArray(row) ? row : Object.values(row as Record<string, unknown>)).map((cell, j) => (
               <td key={j} className={firstColLeft && j === 0 ? "text-left" : ""}>
                 {rv(cell)}
               </td>
@@ -80,10 +81,10 @@ function StatRow({ label, value }: { label: string; value: unknown }) {
 // ── Renderers by procedure ─────────────────────────────────────────────────────
 
 function renderFrequencies(c: Record<string, unknown>): ReactNode {
-  const headers = c.headers as string[];
+  const headers = Array.isArray(c.headers) ? c.headers as string[] : [];
   // Support both array-of-arrays (new format) and array-of-dicts (legacy)
-  let rows = c.rows as unknown[][];
-  if (rows && rows.length > 0 && typeof rows[0] === "object" && !Array.isArray(rows[0])) {
+  let rows = Array.isArray(c.rows) ? c.rows as unknown[][] : [];
+  if (rows.length > 0 && typeof rows[0] === "object" && !Array.isArray(rows[0])) {
     // Convert dict rows to array rows
     const dictRows = rows as unknown as Record<string, unknown>[];
     rows = dictRows.map(r => [r.value, r.label, r.count, r.percent, r.valid_percent, r.cumulative_percent]);
@@ -120,12 +121,14 @@ function renderFrequencies(c: Record<string, unknown>): ReactNode {
 }
 
 function renderDescriptives(c: Record<string, unknown>): ReactNode {
-  return <PivotTable headers={c.headers as string[]} rows={c.rows as unknown[][]} />;
+  const headers = Array.isArray(c.headers) ? c.headers as string[] : [];
+  const rows = Array.isArray(c.rows) ? c.rows as unknown[][] : [];
+  return <PivotTable headers={headers} rows={rows} />;
 }
 
 function renderCrosstabs(c: Record<string, unknown>): ReactNode {
-  const headers = c.headers as string[];
-  const rows = c.rows as unknown[][];
+  const headers = Array.isArray(c.headers) ? c.headers as string[] : [];
+  const rows = Array.isArray(c.rows) ? c.rows as unknown[][] : [];
   return (
     <div className="space-y-2">
       <PivotTable headers={headers} rows={rows} />
@@ -462,7 +465,11 @@ function renderCorrelation(c: Record<string, unknown>): ReactNode {
   const rMatrix = c.r_matrix as (number | null)[][];
   const pMatrix = c.p_matrix as (number | null)[][];
   const nMatrix = c.n_matrix as number[][];
-  if (!variables || !rMatrix) return <PivotTable headers={c.headers as string[]} rows={c.rows as unknown[][]} />;
+  if (!variables || !rMatrix) {
+    const fallbackH = Array.isArray(c.headers) ? c.headers as string[] : [];
+    const fallbackR = Array.isArray(c.rows) ? c.rows as unknown[][] : [];
+    return <PivotTable headers={fallbackH} rows={fallbackR} />;
+  }
 
   return (
     <div>
@@ -667,8 +674,8 @@ function renderLogisticRegression(c: Record<string, unknown>): ReactNode {
 }
 
 function renderEFA(c: Record<string, unknown>): ReactNode {
-  const headers = c.headers as string[];
-  const rows = c.rows as unknown[][];
+  const headers = Array.isArray(c.headers) ? c.headers as string[] : [];
+  const rows = Array.isArray(c.rows) ? c.rows as unknown[][] : [];
   const variables = c.variables as string[];
   const eigenvalues = c.eigenvalues as number[] | null;
   return (
@@ -811,7 +818,7 @@ function renderContent(block: OutputBlockType): ReactNode {
   if (procedure === "reliability") return renderReliability(content);
 
   // Fallback: use generic headers/rows pivot table if present
-  if (content.headers && content.rows) {
+  if (Array.isArray(content.headers) && Array.isArray(content.rows)) {
     return <PivotTable headers={content.headers as string[]} rows={content.rows as unknown[][]} />;
   }
 
