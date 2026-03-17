@@ -63,12 +63,23 @@ def run_efa(
     X = subset.to_numpy(dtype=float)
     n, p = X.shape
 
+    if n < 3:
+        raise ValueError(f"Need at least 3 cases for factor analysis, got {n}")
+
+    if p < 2:
+        raise ValueError(f"Need at least 2 variables for factor analysis, got {p}")
+
     if n < p:
         logger.warning(f"EFA: n ({n}) < p ({p}), results may be unstable")
 
     if n_factors > p:
         n_factors = p
         logger.warning(f"EFA: n_factors capped at {p} (number of variables)")
+
+    # Clean NaN/Inf values that slip through
+    if not np.isfinite(X).all():
+        X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        logger.warning("EFA: Replaced non-finite values with 0")
 
     # KMO
     kmo_overall, kmo_per_var = calculate_kmo(X)
@@ -90,9 +101,26 @@ def run_efa(
     fa_method = method_map.get(extraction, "principal")
     rotation_val = None if rotation == "none" else rotation
 
-    # Fit factor analyzer
+    # Fit factor analyzer — handle scikit-learn version incompatibility
+    # factor_analyzer uses deprecated `force_all_finite` kwarg removed in sklearn 1.6+
     fa = FactorAnalyzer(n_factors=n_factors, method=fa_method, rotation=rotation_val)
-    fa.fit(X)
+    try:
+        fa.fit(X)
+    except TypeError as e:
+        if "force_all_finite" in str(e):
+            # Monkey-patch: sklearn renamed force_all_finite → ensure_all_finite
+            import sklearn.utils.validation as skval
+            _original = skval.check_array
+            def _patched(*args, **kwargs):
+                kwargs.pop("force_all_finite", None)
+                return _original(*args, **kwargs)
+            skval.check_array = _patched
+            try:
+                fa.fit(X)
+            finally:
+                skval.check_array = _original
+        else:
+            raise
 
     # Loadings (n_vars × n_factors)
     loadings = fa.loadings_.tolist()

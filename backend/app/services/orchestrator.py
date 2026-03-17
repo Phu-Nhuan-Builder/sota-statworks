@@ -52,6 +52,30 @@ def _log_pipeline(step: str, data: Any, max_len: int = 500) -> None:
         logger.info(f"[PIPELINE] {step}: <unserializable>")
 
 
+def _sanitize_results(obj: Any) -> Any:
+    """Recursively convert numpy types to native Python for JSON serialization."""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize_results(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_results(v) for v in obj]
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        val = float(obj)
+        if not np.isfinite(val):
+            return None
+        return val
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    if isinstance(obj, float):
+        if not np.isfinite(obj):
+            return None
+    return obj
+
+
 async def analyze(session_id: str, query: str) -> Dict[str, Any]:
     """
     Main NL analysis pipeline:
@@ -108,6 +132,17 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
                 # Re-infer schema for filtered data
                 schema = infer_schema(df)
 
+    # EDGE CASE: Empty df after filtering
+    if len(df) == 0:
+        logger.warning("[PIPELINE] ⚠ DataFrame is empty after filtering")
+        return {
+            "status": "error",
+            "message": "No data matches the specified filter. Check if the entities exist in your dataset.",
+            "intent": intent,
+            "charts": [],
+            "tables": [],
+        }
+
     # 2. Route to method — deterministic mapping
     plan = route_method(intent, schema, df)
     _log_pipeline("execution_plan", plan)
@@ -126,6 +161,7 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
     # 3. Execute real computation
     try:
         results = _execute_plan(plan, df)
+        results = _sanitize_results(results)
         _log_pipeline("raw_results_keys", list(results.keys()) if isinstance(results, dict) else type(results).__name__)
     except Exception as e:
         logger.error(f"[PIPELINE] Execution FAILED for {plan['method']}: {e}", exc_info=True)
@@ -138,9 +174,18 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
             "tables": [],
         }
 
-    # 4. Build charts + tables from real results
-    charts = build_charts(plan["method"], results, plan.get("params", {}))
-    tables = build_tables(plan["method"], results, plan.get("params", {}))
+    # 4. Build charts + tables from real results (wrapped — never crash on builder bugs)
+    try:
+        charts = build_charts(plan["method"], results, plan.get("params", {}))
+    except Exception as e:
+        logger.warning(f"[PIPELINE] chart_builder FAILED: {e}")
+        charts = []
+
+    try:
+        tables = build_tables(plan["method"], results, plan.get("params", {}))
+    except Exception as e:
+        logger.warning(f"[PIPELINE] table_builder FAILED: {e}")
+        tables = []
     _log_pipeline("built_output", {
         "n_charts": len(charts),
         "chart_types": [c.get("chart_type") for c in charts],
@@ -206,10 +251,17 @@ async def analyze_auto(session_id: str) -> Dict[str, Any]:
     for plan in plans:
         try:
             results = _execute_plan(plan, df)
+            results = _sanitize_results(results)
 
-            # Build charts + tables per analysis
-            charts = build_charts(plan["method"], results, plan.get("params", {}))
-            tables = build_tables(plan["method"], results, plan.get("params", {}))
+            # Build charts + tables per analysis (wrapped)
+            try:
+                charts = build_charts(plan["method"], results, plan.get("params", {}))
+            except Exception:
+                charts = []
+            try:
+                tables = build_tables(plan["method"], results, plan.get("params", {}))
+            except Exception:
+                tables = []
 
             # Generate insight
             try:
