@@ -110,7 +110,7 @@ def route_method(
 
 
 def _route_comparison(variables, numeric_vars, categorical_vars, df, warnings):
-    """Route compare_groups intent to correct test."""
+    """Route compare_groups intent to correct test. AI-first: never override intent."""
     dep = variables.get("dependent")
     group_var = variables.get("group_var")
     indep = variables.get("independent") or []
@@ -126,30 +126,22 @@ def _route_comparison(variables, numeric_vars, categorical_vars, df, warnings):
     if not dep or not group_var:
         return _error_plan("Need a numeric dependent variable and a categorical grouping variable for comparison")
 
-    # Check if group_var exists in df
     if group_var not in df.columns:
         return _error_plan(f"Grouping variable '{group_var}' not found in dataset")
 
     # Count groups and check min observations per group
     n_groups = df[group_var].nunique()
-    min_obs = df.groupby(group_var).size().min()
+    min_obs = df.groupby(group_var).size().min() if n_groups > 0 else 0
 
-    # If groups are too small for statistical tests → descriptive comparison
+    # ADVISORY: warn but don't override
     if min_obs < 2:
-        # Build comparison variables list (dep + any extras from independent)
-        compare_vars = [dep]
-        for v in indep:
-            if v in df.columns and v not in compare_vars:
-                compare_vars.append(v)
-        # Add more numeric vars if we have few
-        if len(compare_vars) < 3:
-            for v in numeric_vars:
-                if v not in compare_vars:
-                    compare_vars.append(v)
-                if len(compare_vars) >= 6:
-                    break
+        warnings.append(f"⚠ Each group has <2 observations — results may not be statistically reliable")
 
-        warnings.append(f"Groups have <2 observations each — using descriptive comparison instead of statistical test")
+    if n_groups < 2:
+        # Can't do t-test or ANOVA with < 2 groups — fall back to descriptive comparison
+        compare_vars = [dep] + [v for v in indep if v in df.columns and v != dep]
+        if len(compare_vars) < 2:
+            compare_vars += [v for v in numeric_vars if v not in compare_vars][:4]
         return {
             "method": "descriptives",
             "params": {"variables": compare_vars, "group_var": group_var},
@@ -164,19 +156,17 @@ def _route_comparison(variables, numeric_vars, categorical_vars, df, warnings):
             "description": f"Independent samples t-test: '{dep}' by '{group_var}' (2 groups)",
             "warnings": warnings,
         }
-    elif n_groups > 2:
+    else:
         return {
             "method": "one_way_anova",
             "params": {"dep_var": dep, "group_var": group_var, "posthoc": "tukey"},
             "description": f"One-way ANOVA: '{dep}' by '{group_var}' ({n_groups} groups) with Tukey HSD",
             "warnings": warnings,
         }
-    else:
-        return _error_plan(f"Grouping variable '{group_var}' has only {n_groups} group(s)")
 
 
 def _route_relationship(variables, numeric_vars, df, warnings):
-    """Route find_relationship intent to correlation."""
+    """Route find_relationship intent to correlation. AI-first: always try correlation."""
     indep = variables.get("independent") or []
     if len(indep) < 2:
         indep = numeric_vars[:5]
@@ -184,16 +174,10 @@ def _route_relationship(variables, numeric_vars, df, warnings):
             return _error_plan("Need at least 2 numeric variables for correlation")
         warnings.append(f"Auto-selected variables: {', '.join(indep)}")
 
-    # Min-obs check: correlation needs at least 3 observations
-    n_valid = len(df[indep].dropna())
+    # ADVISORY: warn but don't override
+    n_valid = len(df[indep].dropna()) if all(v in df.columns for v in indep) else len(df)
     if n_valid < 3:
-        warnings.append(f"Only {n_valid} complete observations — using descriptives instead of correlation")
-        return {
-            "method": "descriptives",
-            "params": {"variables": indep},
-            "description": f"Descriptive statistics for {len(indep)} variables (insufficient data for correlation)",
-            "warnings": warnings,
-        }
+        warnings.append(f"⚠ Only {n_valid} observations — correlation results may not be statistically reliable")
 
     return {
         "method": "correlation",
@@ -204,7 +188,7 @@ def _route_relationship(variables, numeric_vars, df, warnings):
 
 
 def _route_prediction(variables, numeric_vars, df, warnings):
-    """Route predict intent to regression."""
+    """Route predict intent to regression. AI-first: always try regression."""
     dep = variables.get("dependent")
     indep = variables.get("independent") or []
 
@@ -221,18 +205,12 @@ def _route_prediction(variables, numeric_vars, df, warnings):
             return _error_plan("Need at least 1 independent variable for regression")
         warnings.append(f"Auto-selected independent variables: {', '.join(indep)}")
 
-    # Min-obs check: regression needs n > k+1 (predictors + intercept)
+    # ADVISORY: warn but don't override
     all_vars = [dep] + indep
     n_valid = len(df[all_vars].dropna()) if all(v in df.columns for v in all_vars) else len(df)
-    min_needed = len(indep) + 2  # k predictors + intercept + 1 residual DOF
+    min_needed = len(indep) + 2
     if n_valid < min_needed:
-        warnings.append(f"Only {n_valid} observations for {len(indep)} predictors — using descriptives instead of regression")
-        return {
-            "method": "descriptives",
-            "params": {"variables": all_vars},
-            "description": f"Descriptive statistics (insufficient data for regression: need ≥{min_needed} obs, got {n_valid})",
-            "warnings": warnings,
-        }
+        warnings.append(f"⚠ Only {n_valid} observations for {len(indep)} predictors (need ≥{min_needed}) — results may be unreliable")
 
     # Check if DV is binary → logistic
     if dep in df.columns:

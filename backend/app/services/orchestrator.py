@@ -158,31 +158,79 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
             "tables": [],
         }
 
-    # 3. Execute real computation
+    # 3. Execute real computation — AI-first with graceful degradation
+    #    If the AI-selected method fails (e.g. insufficient obs), try downgrading:
+    #    regression → correlation → descriptives
+    DEGRADATION_CHAIN = {
+        "ols_regression": [
+            ("correlation", lambda p: {"variables": [p.get("dependent", "")] + p.get("independents", []), "method": "pearson"}),
+            ("descriptives", lambda p: {"variables": [p.get("dependent", "")] + p.get("independents", [])}),
+        ],
+        "binary_logistic": [
+            ("descriptives", lambda p: {"variables": [p.get("dependent", "")] + p.get("independents", [])}),
+        ],
+        "independent_ttest": [
+            ("descriptives", lambda p: {"variables": [p.get("test_var", "")], "group_var": p.get("group_var")}),
+        ],
+        "one_way_anova": [
+            ("descriptives", lambda p: {"variables": [p.get("dep_var", "")], "group_var": p.get("group_var")}),
+        ],
+        "correlation": [
+            ("descriptives", lambda p: {"variables": p.get("variables", [])}),
+        ],
+    }
+
+    results = None
+    executed_method = plan["method"]
     try:
         results = _execute_plan(plan, df)
         results = _sanitize_results(results)
         _log_pipeline("raw_results_keys", list(results.keys()) if isinstance(results, dict) else type(results).__name__)
     except Exception as e:
-        logger.error(f"[PIPELINE] Execution FAILED for {plan['method']}: {e}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"Analysis failed: {str(e)}",
-            "intent": intent,
-            "plan": plan,
-            "charts": [],
-            "tables": [],
-        }
+        logger.warning(f"[PIPELINE] Primary method {plan['method']} FAILED: {e}")
+        original_error = str(e)
+
+        # Try degradation chain
+        fallbacks = DEGRADATION_CHAIN.get(plan["method"], [])
+        for fallback_method, param_fn in fallbacks:
+            try:
+                fallback_params = param_fn(plan.get("params", {}))
+                # Clean empty strings from variables
+                if "variables" in fallback_params:
+                    fallback_params["variables"] = [v for v in fallback_params["variables"] if v and v in df.columns]
+                fallback_plan = {"method": fallback_method, "params": fallback_params}
+                results = _execute_plan(fallback_plan, df)
+                results = _sanitize_results(results)
+                executed_method = fallback_method
+                plan["warnings"] = plan.get("warnings", []) + [
+                    f"⚠ {plan['method']} failed ({original_error}) — gracefully degraded to {fallback_method}"
+                ]
+                logger.info(f"[PIPELINE] Degraded {plan['method']} → {fallback_method}")
+                break
+            except Exception as e2:
+                logger.warning(f"[PIPELINE] Degradation to {fallback_method} also failed: {e2}")
+                continue
+
+        if results is None:
+            logger.error(f"[PIPELINE] All methods exhausted for {plan['method']}: {original_error}")
+            return {
+                "status": "error",
+                "message": f"Analysis failed: {original_error}",
+                "intent": intent,
+                "plan": plan,
+                "charts": [],
+                "tables": [],
+            }
 
     # 4. Build charts + tables from real results (wrapped — never crash on builder bugs)
     try:
-        charts = build_charts(plan["method"], results, plan.get("params", {}))
+        charts = build_charts(executed_method, results, plan.get("params", {}))
     except Exception as e:
         logger.warning(f"[PIPELINE] chart_builder FAILED: {e}")
         charts = []
 
     try:
-        tables = build_tables(plan["method"], results, plan.get("params", {}))
+        tables = build_tables(executed_method, results, plan.get("params", {}))
     except Exception as e:
         logger.warning(f"[PIPELINE] table_builder FAILED: {e}")
         tables = []
@@ -195,12 +243,12 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
 
     # SAFEGUARD: Warn if no charts/tables were generated
     if not charts and not tables:
-        logger.warning(f"[PIPELINE] ⚠ No charts or tables generated for method '{plan['method']}'")
+        logger.warning(f"[PIPELINE] ⚠ No charts or tables generated for method '{executed_method}'")
 
     # 5. Generate insight (LLM second pass — explains computed results)
     try:
         insight = await generate_insight(
-            method=plan["method"],
+            method=executed_method,
             description=plan["description"],
             results=results,
         )
@@ -218,12 +266,15 @@ async def analyze(session_id: str, query: str) -> Dict[str, Any]:
         "charts": charts,
         "tables": tables,
         "meta": {
-            "analysis_type": plan["method"],
+            "analysis_type": executed_method,
+            "original_method": plan["method"],
+            "degraded": executed_method != plan["method"],
             "confidence": intent.get("confidence", 0),
+            "warnings": plan.get("warnings", []),
         },
     }
 
-    logger.info(f"[PIPELINE] ═══ END analyze → method={plan['method']}, charts={len(charts)}, tables={len(tables)} ═══")
+    logger.info(f"[PIPELINE] ═══ END analyze → method={executed_method} (planned={plan['method']}), charts={len(charts)}, tables={len(tables)} ═══")
     return response
 
 
