@@ -258,6 +258,10 @@ def one_way_anova(
     group_labels = sorted(groups_df[group_var].unique())
     # Convert numpy types to native Python for JSON serialization
     group_labels = [x.item() if hasattr(x, 'item') else x for x in group_labels]
+
+    if len(group_labels) < 2:
+        raise ValueError(f"Need at least 2 groups for ANOVA, got {len(group_labels)}")
+
     groups_data = [groups_df.loc[groups_df[group_var] == g, dep_var].to_numpy(dtype=float) for g in group_labels]
 
     if any(len(g) < 2 for g in groups_data):

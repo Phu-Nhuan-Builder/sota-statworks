@@ -150,6 +150,16 @@ def compute_crosstabs(
     row_value_labels = row_value_labels or {}
     col_value_labels = col_value_labels or {}
 
+    # Guard: empty data
+    valid = df[[row_var, col_var]].dropna()
+    if len(valid) == 0:
+        return {
+            "row_var": row_var, "col_var": col_var, "table": {},
+            "chi2": None, "df": None, "p_value": None,
+            "cramers_v": None, "phi": None, "fisher_exact_p": None, "n": 0,
+            "headers": [col_var], "rows": [],
+        }
+
     # Build crosstab
     ct = pd.crosstab(df[row_var], df[col_var], margins=True, margins_name="Total")
     n = int(ct.loc["Total", "Total"])
@@ -261,6 +271,15 @@ def compute_explore(df: pd.DataFrame, variable: str) -> dict:
     series = df[variable].dropna()
     n_valid = len(series)
     n_missing = int(df[variable].isna().sum())
+
+    # Guard: empty data
+    if n_valid == 0:
+        return {
+            "variable": variable, "n_valid": 0, "n_missing": n_missing,
+            "shapiro_w": None, "shapiro_p": None,
+            "boxplot_stats": {}, "percentiles": {},
+        }
+
     arr = series.to_numpy(dtype=float)
 
     # Shapiro-Wilk normality test

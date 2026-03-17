@@ -179,11 +179,21 @@ def _route_relationship(variables, numeric_vars, df, warnings):
     """Route find_relationship intent to correlation."""
     indep = variables.get("independent") or []
     if len(indep) < 2:
-        # Use first N numeric vars
         indep = numeric_vars[:5]
         if len(indep) < 2:
             return _error_plan("Need at least 2 numeric variables for correlation")
         warnings.append(f"Auto-selected variables: {', '.join(indep)}")
+
+    # Min-obs check: correlation needs at least 3 observations
+    n_valid = len(df[indep].dropna())
+    if n_valid < 3:
+        warnings.append(f"Only {n_valid} complete observations — using descriptives instead of correlation")
+        return {
+            "method": "descriptives",
+            "params": {"variables": indep},
+            "description": f"Descriptive statistics for {len(indep)} variables (insufficient data for correlation)",
+            "warnings": warnings,
+        }
 
     return {
         "method": "correlation",
@@ -200,7 +210,7 @@ def _route_prediction(variables, numeric_vars, df, warnings):
 
     if not dep:
         if len(numeric_vars) >= 2:
-            dep = numeric_vars[-1]  # last numeric = likely DV
+            dep = numeric_vars[-1]
             warnings.append(f"Auto-selected dependent variable: '{dep}'")
         else:
             return _error_plan("Need a dependent variable for regression")
@@ -210,6 +220,19 @@ def _route_prediction(variables, numeric_vars, df, warnings):
         if not indep:
             return _error_plan("Need at least 1 independent variable for regression")
         warnings.append(f"Auto-selected independent variables: {', '.join(indep)}")
+
+    # Min-obs check: regression needs n > k+1 (predictors + intercept)
+    all_vars = [dep] + indep
+    n_valid = len(df[all_vars].dropna()) if all(v in df.columns for v in all_vars) else len(df)
+    min_needed = len(indep) + 2  # k predictors + intercept + 1 residual DOF
+    if n_valid < min_needed:
+        warnings.append(f"Only {n_valid} observations for {len(indep)} predictors — using descriptives instead of regression")
+        return {
+            "method": "descriptives",
+            "params": {"variables": all_vars},
+            "description": f"Descriptive statistics (insufficient data for regression: need ≥{min_needed} obs, got {n_valid})",
+            "warnings": warnings,
+        }
 
     # Check if DV is binary → logistic
     if dep in df.columns:

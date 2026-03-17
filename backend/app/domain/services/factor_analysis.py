@@ -10,6 +10,42 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# ── Monkey-patch: scikit-learn 1.6+ removed force_all_finite param ─────────
+# factor_analyzer passes force_all_finite to sklearn.utils.validation.check_array
+# which was renamed to ensure_all_finite in sklearn 1.6+.
+# CRITICAL: factor_analyzer binds check_array at import time via
+#   `from sklearn.utils.validation import check_array`
+# So we must patch BOTH sklearn's module AND factor_analyzer's own reference.
+try:
+    from sklearn.utils.validation import check_array as _original_check_array
+    import sklearn.utils.validation as _skval
+
+    def _patched_check_array(*args, **kwargs):
+        kwargs.pop("force_all_finite", None)
+        return _original_check_array(*args, **kwargs)
+
+    # Only patch if needed (test if force_all_finite is actually unsupported)
+    try:
+        _original_check_array([[1.0]], force_all_finite=True)
+    except TypeError:
+        # Patch sklearn module
+        _skval.check_array = _patched_check_array
+        # Patch factor_analyzer's own bound reference
+        try:
+            import factor_analyzer.factor_analyzer as _fa_mod
+            _fa_mod.check_array = _patched_check_array
+        except (ImportError, AttributeError):
+            pass
+        try:
+            import factor_analyzer.utils as _fa_utils
+            if hasattr(_fa_utils, 'check_array'):
+                _fa_utils.check_array = _patched_check_array
+        except (ImportError, AttributeError):
+            pass
+        logger.info("Patched check_array for force_all_finite compat (sklearn + factor_analyzer)")
+except ImportError:
+    pass
+
 
 def calculate_kmo(X_array: np.ndarray) -> Tuple[float, np.ndarray]:
     """
@@ -101,26 +137,9 @@ def run_efa(
     fa_method = method_map.get(extraction, "principal")
     rotation_val = None if rotation == "none" else rotation
 
-    # Fit factor analyzer — handle scikit-learn version incompatibility
-    # factor_analyzer uses deprecated `force_all_finite` kwarg removed in sklearn 1.6+
+    # Fit factor analyzer (sklearn compat patched at module level)
     fa = FactorAnalyzer(n_factors=n_factors, method=fa_method, rotation=rotation_val)
-    try:
-        fa.fit(X)
-    except TypeError as e:
-        if "force_all_finite" in str(e):
-            # Monkey-patch: sklearn renamed force_all_finite → ensure_all_finite
-            import sklearn.utils.validation as skval
-            _original = skval.check_array
-            def _patched(*args, **kwargs):
-                kwargs.pop("force_all_finite", None)
-                return _original(*args, **kwargs)
-            skval.check_array = _patched
-            try:
-                fa.fit(X)
-            finally:
-                skval.check_array = _original
-        else:
-            raise
+    fa.fit(X)
 
     # Loadings (n_vars × n_factors)
     loadings = fa.loadings_.tolist()
